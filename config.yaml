@@ -1,0 +1,42 @@
+seed: 42
+
+data:
+  sequences_csv: data/2018-06-06-pdb-intersect-pisces.csv
+  labels_csv: data/2018-06-06-ss.cleaned.csv
+  id_column: id
+  seq_column: seq
+  label_column_q3: sst3
+  label_column_q8: sst8
+  target: q8  # q3 or q8
+  max_len: 700
+  max_seq_len_filter: 800
+  train_fraction: 0.8
+  val_fraction: 0.1
+
+training:
+  epochs: 40
+  batch_size: 32
+  lr: 0.001
+  optimizer: adamw  # adam or adamw
+  weight_decay: 0.01
+  grad_clip_norm: 1.0
+  mixed_precision: true
+  num_workers: 2
+  pin_memory: true
+  early_stopping_patience: 5
+  reduce_lr_on_plateau:
+    enabled: true
+    factor: 0.5
+    patience: 3
+
+model:
+  vocab: "ACDEFGHIKLMNPQRSTVWYX"  # X for unknown, PAD=0
+  embedding_dim: 128
+  hidden_dim: 256
+  dropout: 0.3
+  layers: 2
+  attention: false
+
+output:
+  checkpoints_dir: checkpoints
+  best_model_path: checkpoints/bilstm_${data.target}.pt
