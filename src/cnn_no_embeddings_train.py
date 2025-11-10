@@ -48,7 +48,8 @@ def load_sequence_label_dataframe(
     """
     candidate_paths = [p for p in [data_csv, labels_csv, sequences_csv] if p]
     if not candidate_paths:
-        default = os.path.join(os.path.dirname(os.path.dirname(__file__)), "data", "2018-06-06-ss.cleaned.csv")
+        default = os.path.join(os.path.dirname(os.path.dirname(
+            __file__)), "data", "2018-06-06-ss.cleaned.csv")
         candidate_paths = [default]
 
     last_err = None
@@ -68,11 +69,13 @@ def load_sequence_label_dataframe(
         except Exception as e:
             last_err = e
             continue
-    raise RuntimeError(f"Failed to load a usable CSV from {candidate_paths}: {last_err}")
+    raise RuntimeError(
+        f"Failed to load a usable CSV from {candidate_paths}: {last_err}")
 
 
 def build_vocabs(df: pd.DataFrame) -> Tuple[Dict[str, int], Dict[str, int], Dict[str, int]]:
-    ss8_vocab = {'H': 0, 'G': 1, 'I': 2, 'E': 3, 'B': 4, 'T': 5, 'S': 6, 'C': 7}
+    ss8_vocab = {'H': 0, 'G': 1, 'I': 2,
+                 'E': 3, 'B': 4, 'T': 5, 'S': 6, 'C': 7}
     ss3_vocab = {'H': 0, 'E': 1, 'C': 2}
 
     all_chars = set(''.join(df['seq'].astype(str).tolist()))
@@ -99,8 +102,10 @@ class ProteinSequenceDataset(Dataset):
         ss3 = str(self.sst3_labels[idx])
 
         seq_tokens = [self.seq_vocab.get(c, 0) for c in seq]
-        ss8_tokens = [self.ss8_vocab.get(c, -1) for c in ss8][: len(seq_tokens)]
-        ss3_tokens = [self.ss3_vocab.get(c, -1) for c in ss3][: len(seq_tokens)]
+        ss8_tokens = [self.ss8_vocab.get(c, -1)
+                      for c in ss8][: len(seq_tokens)]
+        ss3_tokens = [self.ss3_vocab.get(c, -1)
+                      for c in ss3][: len(seq_tokens)]
 
         return (
             torch.tensor(seq_tokens, dtype=torch.long),
@@ -114,7 +119,8 @@ def make_collate_fn(seq_vocab: Dict[str, int]):
 
     def collate_fn(batch):
         seqs, ss8s, ss3s = zip(*batch)
-        padded_seqs = pad_sequence(seqs, batch_first=True, padding_value=pad_id)
+        padded_seqs = pad_sequence(
+            seqs, batch_first=True, padding_value=pad_id)
         padded_ss8s = pad_sequence(ss8s, batch_first=True, padding_value=-1)
         padded_ss3s = pad_sequence(ss3s, batch_first=True, padding_value=-1)
         return padded_seqs, padded_ss8s, padded_ss3s
@@ -131,7 +137,8 @@ class PositionalEncoding(nn.Module):
         self.dropout = nn.Dropout(p=dropout)
         pe = torch.zeros(max_len, d_model)
         position = torch.arange(0, max_len, dtype=torch.float).unsqueeze(1)
-        div_term = torch.exp(torch.arange(0, d_model, 2).float() * (-math.log(10000.0) / d_model))
+        div_term = torch.exp(torch.arange(
+            0, d_model, 2).float() * (-math.log(10000.0) / d_model))
         pe[:, 0::2] = torch.sin(position * div_term)
         pe[:, 1::2] = torch.cos(position * div_term)
         pe = pe.unsqueeze(0)  # [1, max_len, d_model]
@@ -145,18 +152,22 @@ class PositionalEncoding(nn.Module):
 class ProteinCNN(nn.Module):
     def __init__(self, vocab_size, input_dim=128, num_filters=128, dropout=0.1, pad_id: int = 0):
         super().__init__()
-        self.embedding = nn.Embedding(vocab_size, input_dim, padding_idx=pad_id)
+        self.embedding = nn.Embedding(
+            vocab_size, input_dim, padding_idx=pad_id)
         self.pos_encoder = PositionalEncoding(input_dim, dropout)
 
-        self.conv1 = nn.Conv1d(in_channels=input_dim, out_channels=num_filters, kernel_size=3, padding=1)
+        self.conv1 = nn.Conv1d(
+            in_channels=input_dim, out_channels=num_filters, kernel_size=3, padding=1)
         self.relu1 = nn.ReLU()
         self.dropout1 = nn.Dropout(dropout)
 
-        self.conv2 = nn.Conv1d(in_channels=num_filters, out_channels=num_filters, kernel_size=5, padding=2)
+        self.conv2 = nn.Conv1d(
+            in_channels=num_filters, out_channels=num_filters, kernel_size=5, padding=2)
         self.relu2 = nn.ReLU()
         self.dropout2 = nn.Dropout(dropout)
 
-        self.conv3 = nn.Conv1d(in_channels=num_filters, out_channels=num_filters, kernel_size=7, padding=3)
+        self.conv3 = nn.Conv1d(
+            in_channels=num_filters, out_channels=num_filters, kernel_size=7, padding=3)
         self.relu3 = nn.ReLU()
         self.dropout3 = nn.Dropout(dropout)
 
@@ -221,8 +232,10 @@ def compute_sov_q3(pred_logits, labels) -> float:
         true_seq_filtered = true_seq[mask]
         if len(true_seq_filtered) == 0:
             continue
-        pred_chars = [q3_id_to_char.get(pid.item(), 'C') for pid in pred_seq_filtered]
-        true_chars = [q3_id_to_char.get(tid.item(), 'C') for tid in true_seq_filtered]
+        pred_chars = [q3_id_to_char.get(pid.item(), 'C')
+                      for pid in pred_seq_filtered]
+        true_chars = [q3_id_to_char.get(tid.item(), 'C')
+                      for tid in true_seq_filtered]
 
         total_weighted_sov = 0.0
         total_residues = 0.0
@@ -241,14 +254,16 @@ def compute_sov_q3(pred_logits, labels) -> float:
                     overlap_end = min(obs_end, pred_end)
                     min_ov = max(0, overlap_end - overlap_start + 1)
                     if min_ov > 0:
-                        max_ov = max(obs_end, pred_end) - min(obs_start, pred_start) + 1
+                        max_ov = max(obs_end, pred_end) - \
+                            min(obs_start, pred_start) + 1
                         len_pred = (pred_end - pred_start + 1)
                         if min_ov > best_min_ov:
                             best_min_ov = min_ov
                             best_max_ov = max_ov
                             best_len_pred = len_pred
                 if best_min_ov > 0:
-                    delta = min(best_max_ov - best_min_ov, best_min_ov, len_obs // 2, best_len_pred // 2)
+                    delta = min(best_max_ov - best_min_ov,
+                                best_min_ov, len_obs // 2, best_len_pred // 2)
                     segment_sov = (best_min_ov + delta) / best_max_ov
                 else:
                     segment_sov = 0.0
@@ -358,7 +373,8 @@ def train_cnn_no_embeddings(
         data_cfg = cfg.get('data', {})
         sequences_csv = data_cfg.get('sequences_csv', sequences_csv)
         labels_csv = data_cfg.get('labels_csv', labels_csv)
-        data_csv = data_csv or data_cfg.get('labels_csv') or data_cfg.get('sequences_csv')
+        data_csv = data_csv or data_cfg.get(
+            'labels_csv') or data_cfg.get('sequences_csv')
 
         train_cfg = cfg.get('training', {})
         epochs = train_cfg.get('epochs', epochs)
@@ -383,16 +399,19 @@ def train_cnn_no_embeddings(
     device_t = torch.device(device)
 
     # Load data
-    df = load_sequence_label_dataframe(data_csv=data_csv, sequences_csv=sequences_csv, labels_csv=labels_csv)
+    df = load_sequence_label_dataframe(
+        data_csv=data_csv, sequences_csv=sequences_csv, labels_csv=labels_csv)
 
     # Build vocabs and dataloaders
     seq_vocab, ss8_vocab, ss3_vocab = build_vocabs(df)
     collate_fn = make_collate_fn(seq_vocab)
 
-    train_indices, temp_indices = train_test_split(range(len(df)), test_size=0.2, random_state=seed)
-    val_indices, test_indices = train_test_split(temp_indices, test_size=0.5, random_state=seed)
+    train_indices, temp_indices = train_test_split(
+        range(len(df)), test_size=0.2, random_state=seed)
+    val_indices, test_indices = train_test_split(
+        temp_indices, test_size=0.5, random_state=seed)
 
-    make_ds = lambda idxs: ProteinSequenceDataset(
+    def make_ds(idxs): return ProteinSequenceDataset(
         df.iloc[idxs]['seq'].tolist(),
         df.iloc[idxs]['sst8'].tolist(),
         df.iloc[idxs]['sst3'].tolist(),
@@ -401,14 +420,18 @@ def train_cnn_no_embeddings(
         ss3_vocab,
     )
 
-    train_loader = DataLoader(make_ds(train_indices), batch_size=batch_size, shuffle=True, collate_fn=collate_fn, num_workers=num_workers, pin_memory=True)
-    val_loader = DataLoader(make_ds(val_indices), batch_size=batch_size, shuffle=False, collate_fn=collate_fn, num_workers=num_workers, pin_memory=True)
-    test_loader = DataLoader(make_ds(test_indices), batch_size=batch_size, shuffle=False, collate_fn=collate_fn, num_workers=num_workers, pin_memory=True)
+    train_loader = DataLoader(make_ds(train_indices), batch_size=batch_size,
+                              shuffle=True, collate_fn=collate_fn, num_workers=num_workers, pin_memory=True)
+    val_loader = DataLoader(make_ds(val_indices), batch_size=batch_size, shuffle=False,
+                            collate_fn=collate_fn, num_workers=num_workers, pin_memory=True)
+    test_loader = DataLoader(make_ds(test_indices), batch_size=batch_size, shuffle=False,
+                             collate_fn=collate_fn, num_workers=num_workers, pin_memory=True)
 
     # Model
     vocab_size = len(seq_vocab)
     pad_id = seq_vocab['<pad>']
-    model = ProteinCNN(vocab_size=vocab_size, input_dim=embedding_dim, num_filters=num_filters, dropout=dropout, pad_id=pad_id)
+    model = ProteinCNN(vocab_size=vocab_size, input_dim=embedding_dim,
+                       num_filters=num_filters, dropout=dropout, pad_id=pad_id)
 
     if torch.cuda.device_count() > 1 and device_t.type == 'cuda':
         model = nn.DataParallel(model)
@@ -434,8 +457,10 @@ def train_cnn_no_embeddings(
     # Train
     history = []
     for epoch in range(1, epochs + 1):
-        train_loss, train_acc_q8, train_acc_q3, train_sov_q3 = train_one_epoch(model, train_loader, optimizer, device_t)
-        val_loss, val_acc_q8, val_acc_q3, val_sov_q3 = evaluate(model, val_loader, device_t)
+        train_loss, train_acc_q8, train_acc_q3, train_sov_q3 = train_one_epoch(
+            model, train_loader, optimizer, device_t)
+        val_loss, val_acc_q8, val_acc_q3, val_sov_q3 = evaluate(
+            model, val_loader, device_t)
 
         tqdm.write(
             f"Epoch {epoch:03d}: TrainLoss={train_loss:.4f} ValLoss={val_loss:.4f} | "
@@ -458,12 +483,14 @@ def train_cnn_no_embeddings(
         )
 
         if val_acc_q8 > best_val_acc_q8:
-            state = model.module.state_dict() if isinstance(model, nn.DataParallel) else model.state_dict()
+            state = model.module.state_dict() if isinstance(
+                model, nn.DataParallel) else model.state_dict()
             torch.save(state, best_model_path)
             best_val_acc_q8 = val_acc_q8
 
     # Test with best model
-    best_model = ProteinCNN(vocab_size=vocab_size, input_dim=embedding_dim, num_filters=num_filters, dropout=dropout, pad_id=pad_id)
+    best_model = ProteinCNN(vocab_size=vocab_size, input_dim=embedding_dim,
+                            num_filters=num_filters, dropout=dropout, pad_id=pad_id)
     best_state = torch.load(best_model_path, map_location=device_t)
     best_model.load_state_dict(best_state)
 
@@ -471,7 +498,8 @@ def train_cnn_no_embeddings(
         best_model = nn.DataParallel(best_model)
     best_model.to(device_t)
 
-    test_loss, test_acc_q8, test_acc_q3, test_sov_q3 = evaluate(best_model, test_loader, device_t)
+    test_loss, test_acc_q8, test_acc_q3, test_sov_q3 = evaluate(
+        best_model, test_loader, device_t)
 
     metrics = {
         'best_val_acc_q8': best_val_acc_q8,
@@ -503,9 +531,12 @@ def _resolve_default_config_path() -> str:
 def main():  # CLI
     import argparse
 
-    parser = argparse.ArgumentParser(description='Train CNN (no embeddings) from notebook as a script')
-    parser.add_argument('--config', type=str, default=_resolve_default_config_path(), help='Path to YAML config')
-    parser.add_argument('--data_csv', type=str, default=None, help='Single CSV with seq and labels')
+    parser = argparse.ArgumentParser(
+        description='Train CNN (no embeddings) from notebook as a script')
+    parser.add_argument(
+        '--config', type=str, default=_resolve_default_config_path(), help='Path to YAML config')
+    parser.add_argument('--data_csv', type=str, default=None,
+                        help='Single CSV with seq and labels')
     parser.add_argument('--sequences_csv', type=str, default=None)
     parser.add_argument('--labels_csv', type=str, default=None)
     parser.add_argument('--output_dir', type=str, default='checkpoints')
@@ -542,7 +573,8 @@ def main():  # CLI
         dry_run=args.dry_run,
     )
 
-    print(json.dumps({k: v for k, v in result.items() if k != 'history'}, indent=2))
+    print(json.dumps(
+        {k: v for k, v in result.items() if k != 'history'}, indent=2))
 
 
 if __name__ == '__main__':
