@@ -93,6 +93,8 @@ def compute_esm_embeddings(
 # ---------------------------------------------------------------------------
 # Memory-safe streaming: save per-sequence embeddings to disk
 # ---------------------------------------------------------------------------
+
+
 def save_esm_embeddings_to_dir(
     sequences: List[str],
     esm_model,
@@ -112,13 +114,15 @@ def save_esm_embeddings_to_dir(
     os.makedirs(output_dir, exist_ok=True)
     index_rows = []
     torch_dtype = torch.float16 if dtype == 'float16' else torch.float32
-    data = list(zip(range(len(sequences)), [s.replace('*', 'X') for s in sequences]))
+    data = list(zip(range(len(sequences)), [
+                s.replace('*', 'X') for s in sequences]))
     for i in tqdm(range(0, len(data), batch_size), desc="Saving ESM2 embeddings"):
         batch = data[i:i+batch_size]
         _, _, batch_tokens = batch_converter(batch)
         batch_tokens = batch_tokens.to(device)
         with torch.no_grad():
-            results = esm_model(batch_tokens, repr_layers=[esm_model.num_layers], return_contacts=False)
+            results = esm_model(batch_tokens, repr_layers=[
+                                esm_model.num_layers], return_contacts=False)
         reps = results['representations'][esm_model.num_layers][:, 1:-1, :]
         for j, emb in enumerate(reps):
             global_idx = i + j
@@ -126,9 +130,11 @@ def save_esm_embeddings_to_dir(
             L, D = emb_cpu.shape
             out_path = os.path.join(output_dir, f"{global_idx:07d}.pt")
             torch.save(emb_cpu, out_path)
-            index_rows.append({'idx': global_idx, 'path': out_path, 'length': int(L), 'dim': int(D)})
+            index_rows.append(
+                {'idx': global_idx, 'path': out_path, 'length': int(L), 'dim': int(D)})
     import pandas as _pd  # local import to avoid shadowing user imports
-    index_df = _pd.DataFrame(index_rows).sort_values('idx').reset_index(drop=True)
+    index_df = _pd.DataFrame(index_rows).sort_values(
+        'idx').reset_index(drop=True)
     index_path = os.path.join(output_dir, 'index.csv')
     index_df.to_csv(index_path, index=False)
     return index_path
@@ -136,6 +142,7 @@ def save_esm_embeddings_to_dir(
 
 class PrecomputedEmbeddingDataset(Dataset):
     """Lazy-loads per-sequence embeddings + builds label tensors on demand."""
+
     def __init__(self, index_df: pd.DataFrame, df: pd.DataFrame, ss8_vocab: Dict[str, int], ss3_vocab: Dict[str, int]):
         self.index_df = index_df
         self.df = df
@@ -147,7 +154,8 @@ class PrecomputedEmbeddingDataset(Dataset):
 
     def __getitem__(self, i):
         row = self.index_df.iloc[i]
-        emb: torch.Tensor = torch.load(row['path'], map_location='cpu')  # [L, D]
+        emb: torch.Tensor = torch.load(
+            row['path'], map_location='cpu')  # [L, D]
         L = emb.shape[0]
         s8 = str(self.df.iloc[i]['sst8'])
         s3 = str(self.df.iloc[i]['sst3'])
@@ -339,7 +347,8 @@ def train_esm2_cnn(
         }
 
     # Common vocab
-    ss8_vocab = {'H': 0, 'G': 1, 'I': 2, 'E': 3, 'B': 4, 'T': 5, 'S': 6, 'C': 7}
+    ss8_vocab = {'H': 0, 'G': 1, 'I': 2,
+                 'E': 3, 'B': 4, 'T': 5, 'S': 6, 'C': 7}
     ss3_vocab = {'H': 0, 'E': 1, 'C': 2}
 
     # Branch 1: existing precomputed directory supplied
@@ -347,22 +356,34 @@ def train_esm2_cnn(
         index_df = pd.read_csv(os.path.join(embeddings_dir, 'index.csv'))
         embedding_dim = int(index_df['dim'].max())
         idx_all = list(range(len(index_df)))
-        train_idx, temp_idx = train_test_split(idx_all, test_size=0.2, random_state=seed)
-        val_idx, test_idx = train_test_split(temp_idx, test_size=0.5, random_state=seed)
-        train_ds = PrecomputedEmbeddingDataset(index_df.loc[train_idx].reset_index(drop=True), df.loc[train_idx].reset_index(drop=True), ss8_vocab, ss3_vocab)
-        val_ds   = PrecomputedEmbeddingDataset(index_df.loc[val_idx].reset_index(drop=True),   df.loc[val_idx].reset_index(drop=True),   ss8_vocab, ss3_vocab)
-        test_ds  = PrecomputedEmbeddingDataset(index_df.loc[test_idx].reset_index(drop=True),  df.loc[test_idx].reset_index(drop=True),  ss8_vocab, ss3_vocab)
-        loader_opts = dict(num_workers=num_workers, pin_memory=True, collate_fn=collate_embeddings)
-        train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, **loader_opts)
-        val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, **loader_opts)
-        test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, **loader_opts)
-        model = ProteinCNNOnEmb(input_dim=embedding_dim, num_filters=num_filters, dropout=dropout)
+        train_idx, temp_idx = train_test_split(
+            idx_all, test_size=0.2, random_state=seed)
+        val_idx, test_idx = train_test_split(
+            temp_idx, test_size=0.5, random_state=seed)
+        train_ds = PrecomputedEmbeddingDataset(index_df.loc[train_idx].reset_index(
+            drop=True), df.loc[train_idx].reset_index(drop=True), ss8_vocab, ss3_vocab)
+        val_ds = PrecomputedEmbeddingDataset(index_df.loc[val_idx].reset_index(
+            drop=True),   df.loc[val_idx].reset_index(drop=True),   ss8_vocab, ss3_vocab)
+        test_ds = PrecomputedEmbeddingDataset(index_df.loc[test_idx].reset_index(
+            drop=True),  df.loc[test_idx].reset_index(drop=True),  ss8_vocab, ss3_vocab)
+        loader_opts = dict(num_workers=num_workers,
+                           pin_memory=True, collate_fn=collate_embeddings)
+        train_loader = DataLoader(
+            train_ds, batch_size=batch_size, shuffle=True, **loader_opts)
+        val_loader = DataLoader(
+            val_ds,   batch_size=batch_size, shuffle=False, **loader_opts)
+        test_loader = DataLoader(
+            test_ds,  batch_size=batch_size, shuffle=False, **loader_opts)
+        model = ProteinCNNOnEmb(input_dim=embedding_dim,
+                                num_filters=num_filters, dropout=dropout)
     else:
         # Need to generate (stream or in-memory)
         esm_model, batch_converter = load_esm(esm_model_name, device_t)
         if precompute or embeddings_dir or precompute_only:
-            out_dir = embeddings_dir or os.path.join(output_dir, 'esm2_embeddings')
-            index_path = save_esm_embeddings_to_dir(df['seq'].tolist(), esm_model, batch_converter, device_t, out_dir, batch_size=esm_batch_size, dtype=save_dtype)
+            out_dir = embeddings_dir or os.path.join(
+                output_dir, 'esm2_embeddings')
+            index_path = save_esm_embeddings_to_dir(df['seq'].tolist(
+            ), esm_model, batch_converter, device_t, out_dir, batch_size=esm_batch_size, dtype=save_dtype)
             if precompute_only:
                 return {
                     'status': 'precomputed',
@@ -373,33 +394,53 @@ def train_esm2_cnn(
             index_df = pd.read_csv(index_path)
             embedding_dim = int(index_df['dim'].max())
             idx_all = list(range(len(index_df)))
-            train_idx, temp_idx = train_test_split(idx_all, test_size=0.2, random_state=seed)
-            val_idx, test_idx = train_test_split(temp_idx, test_size=0.5, random_state=seed)
-            train_ds = PrecomputedEmbeddingDataset(index_df.loc[train_idx].reset_index(drop=True), df.loc[train_idx].reset_index(drop=True), ss8_vocab, ss3_vocab)
-            val_ds   = PrecomputedEmbeddingDataset(index_df.loc[val_idx].reset_index(drop=True),   df.loc[val_idx].reset_index(drop=True),   ss8_vocab, ss3_vocab)
-            test_ds  = PrecomputedEmbeddingDataset(index_df.loc[test_idx].reset_index(drop=True),  df.loc[test_idx].reset_index(drop=True),  ss8_vocab, ss3_vocab)
-            loader_opts = dict(num_workers=num_workers, pin_memory=True, collate_fn=collate_embeddings)
-            train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, **loader_opts)
-            val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, **loader_opts)
-            test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, **loader_opts)
-            model = ProteinCNNOnEmb(input_dim=embedding_dim, num_filters=num_filters, dropout=dropout)
+            train_idx, temp_idx = train_test_split(
+                idx_all, test_size=0.2, random_state=seed)
+            val_idx, test_idx = train_test_split(
+                temp_idx, test_size=0.5, random_state=seed)
+            train_ds = PrecomputedEmbeddingDataset(index_df.loc[train_idx].reset_index(
+                drop=True), df.loc[train_idx].reset_index(drop=True), ss8_vocab, ss3_vocab)
+            val_ds = PrecomputedEmbeddingDataset(index_df.loc[val_idx].reset_index(
+                drop=True),   df.loc[val_idx].reset_index(drop=True),   ss8_vocab, ss3_vocab)
+            test_ds = PrecomputedEmbeddingDataset(index_df.loc[test_idx].reset_index(
+                drop=True),  df.loc[test_idx].reset_index(drop=True),  ss8_vocab, ss3_vocab)
+            loader_opts = dict(num_workers=num_workers,
+                               pin_memory=True, collate_fn=collate_embeddings)
+            train_loader = DataLoader(
+                train_ds, batch_size=batch_size, shuffle=True, **loader_opts)
+            val_loader = DataLoader(
+                val_ds,   batch_size=batch_size, shuffle=False, **loader_opts)
+            test_loader = DataLoader(
+                test_ds,  batch_size=batch_size, shuffle=False, **loader_opts)
+            model = ProteinCNNOnEmb(
+                input_dim=embedding_dim, num_filters=num_filters, dropout=dropout)
         else:
             # In-memory (fallback); may OOM for very large sets
-            padded_embeddings, embedding_dim = compute_esm_embeddings(df['seq'].tolist(), esm_model, batch_converter, device_t, batch_size=esm_batch_size)
+            padded_embeddings, embedding_dim = compute_esm_embeddings(df['seq'].tolist(
+            ), esm_model, batch_converter, device_t, batch_size=esm_batch_size)
             seq_pad_len = padded_embeddings.shape[1]
             ss8_labels = encode_labels(df['sst8'], ss8_vocab, seq_pad_len)
             ss3_labels = encode_labels(df['sst3'], ss3_vocab, seq_pad_len)
             idx_all = list(range(len(padded_embeddings)))
-            train_idx, temp_idx = train_test_split(idx_all, test_size=0.2, random_state=seed)
-            val_idx, test_idx = train_test_split(temp_idx, test_size=0.5, random_state=seed)
-            train_ds = TensorDataset(padded_embeddings[train_idx], ss8_labels[train_idx], ss3_labels[train_idx])
-            val_ds   = TensorDataset(padded_embeddings[val_idx],   ss8_labels[val_idx],   ss3_labels[val_idx])
-            test_ds  = TensorDataset(padded_embeddings[test_idx],  ss8_labels[test_idx],  ss3_labels[test_idx])
+            train_idx, temp_idx = train_test_split(
+                idx_all, test_size=0.2, random_state=seed)
+            val_idx, test_idx = train_test_split(
+                temp_idx, test_size=0.5, random_state=seed)
+            train_ds = TensorDataset(
+                padded_embeddings[train_idx], ss8_labels[train_idx], ss3_labels[train_idx])
+            val_ds = TensorDataset(
+                padded_embeddings[val_idx],   ss8_labels[val_idx],   ss3_labels[val_idx])
+            test_ds = TensorDataset(
+                padded_embeddings[test_idx],  ss8_labels[test_idx],  ss3_labels[test_idx])
             loader_opts = dict(num_workers=num_workers, pin_memory=True)
-            train_loader = DataLoader(train_ds, batch_size=batch_size, shuffle=True, **loader_opts)
-            val_loader   = DataLoader(val_ds,   batch_size=batch_size, shuffle=False, **loader_opts)
-            test_loader  = DataLoader(test_ds,  batch_size=batch_size, shuffle=False, **loader_opts)
-            model = ProteinCNNOnEmb(input_dim=embedding_dim, num_filters=num_filters, dropout=dropout)
+            train_loader = DataLoader(
+                train_ds, batch_size=batch_size, shuffle=True, **loader_opts)
+            val_loader = DataLoader(
+                val_ds,   batch_size=batch_size, shuffle=False, **loader_opts)
+            test_loader = DataLoader(
+                test_ds,  batch_size=batch_size, shuffle=False, **loader_opts)
+            model = ProteinCNNOnEmb(
+                input_dim=embedding_dim, num_filters=num_filters, dropout=dropout)
     if torch.cuda.device_count() > 1 and device_t.type == 'cuda':
         model = nn.DataParallel(model)
     model.to(device_t)
@@ -508,10 +549,14 @@ def main():
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--dry_run', action='store_true')
-    parser.add_argument('--embeddings_dir', type=str, default=None, help='Directory containing or to store streamed embeddings')
-    parser.add_argument('--precompute', action='store_true', help='Stream ESM embeddings to disk then train from them')
-    parser.add_argument('--precompute_only', action='store_true', help='Only generate embeddings, do not train')
-    parser.add_argument('--save_dtype', type=str, default='float16', choices=['float16','float32'], help='On-disk embedding dtype')
+    parser.add_argument('--embeddings_dir', type=str, default=None,
+                        help='Directory containing or to store streamed embeddings')
+    parser.add_argument('--precompute', action='store_true',
+                        help='Stream ESM embeddings to disk then train from them')
+    parser.add_argument('--precompute_only', action='store_true',
+                        help='Only generate embeddings, do not train')
+    parser.add_argument('--save_dtype', type=str, default='float16',
+                        choices=['float16', 'float32'], help='On-disk embedding dtype')
 
     args = parser.parse_args()
 
