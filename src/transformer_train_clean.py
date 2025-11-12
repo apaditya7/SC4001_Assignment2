@@ -203,7 +203,7 @@ def compute_accuracy(pred_logits, labels) -> float:
     return correct / total if total > 0 else 0.0
 
 
-def train_one_epoch(model, loader, optimizer, device, seq_pad_token):
+def train_one_epoch(model, loader, optimizer, device, seq_pad_token, scaler=None, use_mixed_precision=False):
     model.train()
     criterion_q8 = nn.CrossEntropyLoss(ignore_index=-1)
     criterion_q3 = nn.CrossEntropyLoss(ignore_index=-1)
@@ -213,19 +213,32 @@ def train_one_epoch(model, loader, optimizer, device, seq_pad_token):
     epoch_acc_q3 = 0.0
 
     for seqs, ss8, ss3 in tqdm(loader, leave=False):
-        seqs = seqs.to(device)
-        ss8 = ss8.to(device)
-        ss3 = ss3.to(device)
+        seqs = seqs.to(device, non_blocking=True)
+        ss8 = ss8.to(device, non_blocking=True)
+        ss3 = ss3.to(device, non_blocking=True)
         mask = (seqs == seq_pad_token)
 
-        q8_logits, q3_logits = model(seqs, mask)
-        loss_q8 = criterion_q8(q8_logits.view(-1, 8), ss8.view(-1))
-        loss_q3 = criterion_q3(q3_logits.view(-1, 3), ss3.view(-1))
-        loss = loss_q8 + 0.5 * loss_q3
+        # More efficient than zero_grad()
+        optimizer.zero_grad(set_to_none=True)
 
-        optimizer.zero_grad()
-        loss.backward()
-        optimizer.step()
+        if use_mixed_precision and scaler is not None:
+            with torch.cuda.amp.autocast():
+                q8_logits, q3_logits = model(seqs, mask)
+                loss_q8 = criterion_q8(q8_logits.view(-1, 8), ss8.view(-1))
+                loss_q3 = criterion_q3(q3_logits.view(-1, 3), ss3.view(-1))
+                loss = loss_q8 + 0.5 * loss_q3
+
+            scaler.scale(loss).backward()
+            scaler.step(optimizer)
+            scaler.update()
+        else:
+            q8_logits, q3_logits = model(seqs, mask)
+            loss_q8 = criterion_q8(q8_logits.view(-1, 8), ss8.view(-1))
+            loss_q3 = criterion_q3(q3_logits.view(-1, 3), ss3.view(-1))
+            loss = loss_q8 + 0.5 * loss_q3
+
+            loss.backward()
+            optimizer.step()
 
         epoch_loss += loss.item()
         epoch_acc_q8 += compute_accuracy(q8_logits, ss8)
@@ -235,7 +248,7 @@ def train_one_epoch(model, loader, optimizer, device, seq_pad_token):
     return epoch_loss / n, epoch_acc_q8 / n, epoch_acc_q3 / n
 
 
-def evaluate(model, loader, device, seq_pad_token):
+def evaluate(model, loader, device, seq_pad_token, use_mixed_precision=False):
     model.eval()
     criterion_q8 = nn.CrossEntropyLoss(ignore_index=-1)
     criterion_q3 = nn.CrossEntropyLoss(ignore_index=-1)
@@ -246,15 +259,22 @@ def evaluate(model, loader, device, seq_pad_token):
 
     with torch.no_grad():
         for seqs, ss8, ss3 in loader:
-            seqs = seqs.to(device)
-            ss8 = ss8.to(device)
-            ss3 = ss3.to(device)
+            seqs = seqs.to(device, non_blocking=True)
+            ss8 = ss8.to(device, non_blocking=True)
+            ss3 = ss3.to(device, non_blocking=True)
             mask = (seqs == seq_pad_token)
 
-            q8_logits, q3_logits = model(seqs, mask)
-            loss_q8 = criterion_q8(q8_logits.view(-1, 8), ss8.view(-1))
-            loss_q3 = criterion_q3(q3_logits.view(-1, 3), ss3.view(-1))
-            loss = loss_q8 + 0.5 * loss_q3
+            if use_mixed_precision:
+                with torch.cuda.amp.autocast():
+                    q8_logits, q3_logits = model(seqs, mask)
+                    loss_q8 = criterion_q8(q8_logits.view(-1, 8), ss8.view(-1))
+                    loss_q3 = criterion_q3(q3_logits.view(-1, 3), ss3.view(-1))
+                    loss = loss_q8 + 0.5 * loss_q3
+            else:
+                q8_logits, q3_logits = model(seqs, mask)
+                loss_q8 = criterion_q8(q8_logits.view(-1, 8), ss8.view(-1))
+                loss_q3 = criterion_q3(q3_logits.view(-1, 3), ss3.view(-1))
+                loss = loss_q8 + 0.5 * loss_q3
 
             epoch_loss += loss.item()
             epoch_acc_q8 += compute_accuracy(q8_logits, ss8)
@@ -288,6 +308,9 @@ def train_transformer_clean(
     num_workers: int = 2,
     device: Optional[str] = None,
     dry_run: bool = False,
+    use_mixed_precision: bool = True,  # Enable mixed precision by default
+    early_stopping_patience: int = 7,
+    early_stopping_min_delta: float = 0.0001,
 ) -> Dict[str, Any]:
     """
     Train and evaluate the Transformer from the notebook as a function.
@@ -311,6 +334,12 @@ def train_transformer_clean(
         batch_size = train_cfg.get('batch_size', batch_size)
         lr = train_cfg.get('lr', lr)
         num_workers = train_cfg.get('num_workers', num_workers)
+        use_mixed_precision = train_cfg.get(
+            'use_mixed_precision', use_mixed_precision)
+        early_stopping_patience = train_cfg.get(
+            'early_stopping_patience', early_stopping_patience)
+        early_stopping_min_delta = train_cfg.get(
+            'early_stopping_min_delta', early_stopping_min_delta)
 
         model_cfg = cfg.get('model', {})
         embedding_dim = model_cfg.get('embedding_dim', embedding_dim)
@@ -378,7 +407,16 @@ def train_transformer_clean(
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
 
+    # Mixed precision scaler
+    scaler = None
+    if use_mixed_precision and device_t.type == 'cuda':
+        scaler = torch.cuda.amp.GradScaler()
+        print("✓ Mixed precision training enabled")
+
+    # Early stopping variables
     best_val_acc_q8 = -float('inf')
+    epochs_no_improve = 0
+    early_stop = False
     best_model_path = os.path.join(output_dir, 'best_transformer_clean.pt')
 
     if dry_run:
@@ -394,12 +432,18 @@ def train_transformer_clean(
         }
 
     # Train
+    print(
+        f"Training for up to {epochs} epochs with early stopping (patience={early_stopping_patience})")
     history = []
     for epoch in range(1, epochs + 1):
+        if early_stop:
+            print(f"Early stopping triggered at epoch {epoch}")
+            break
+
         train_loss, train_acc_q8, train_acc_q3 = train_one_epoch(
-            model, train_loader, optimizer, device_t, pad_id)
+            model, train_loader, optimizer, device_t, pad_id, scaler, use_mixed_precision)
         val_loss, val_acc_q8, val_acc_q3 = evaluate(
-            model, val_loader, device_t, pad_id)
+            model, val_loader, device_t, pad_id, use_mixed_precision)
 
         tqdm.write(
             f"Epoch {epoch:03d}: TrainLoss={train_loss:.4f} ValLoss={val_loss:.4f} | "
@@ -418,11 +462,22 @@ def train_transformer_clean(
             }
         )
 
-        if val_acc_q8 > best_val_acc_q8:
+        # Early stopping check
+        if val_acc_q8 > best_val_acc_q8 + early_stopping_min_delta:
+            best_val_acc_q8 = val_acc_q8
+            epochs_no_improve = 0
             state = model.module.state_dict() if isinstance(
                 model, nn.DataParallel) else model.state_dict()
             torch.save(state, best_model_path)
-            best_val_acc_q8 = val_acc_q8
+            tqdm.write(f"✓ New best Q8: {best_val_acc_q8:.4f} - Model saved")
+        else:
+            epochs_no_improve += 1
+            tqdm.write(f"✗ No improvement for {epochs_no_improve} epoch(s)")
+
+        if epochs_no_improve >= early_stopping_patience:
+            tqdm.write(
+                f"\n⚠ Early stopping triggered! No improvement for {early_stopping_patience} epochs.")
+            early_stop = True
 
     # Test with best model
     best_model = ProteinTransformer(
@@ -442,7 +497,7 @@ def train_transformer_clean(
     best_model.to(device_t)
 
     test_loss, test_acc_q8, test_acc_q3 = evaluate(
-        best_model, test_loader, device_t, pad_id)
+        best_model, test_loader, device_t, pad_id, use_mixed_precision)
 
     metrics = {
         'best_val_acc_q8': best_val_acc_q8,
@@ -496,6 +551,12 @@ def main():  # CLI
     parser.add_argument('--num_workers', type=int, default=2)
     parser.add_argument('--device', type=str, default=None)
     parser.add_argument('--dry_run', action='store_true')
+    parser.add_argument('--use_mixed_precision', type=bool,
+                        default=True, help='Enable mixed precision training')
+    parser.add_argument('--early_stopping_patience', type=int,
+                        default=7, help='Early stopping patience')
+    parser.add_argument('--early_stopping_min_delta', type=float,
+                        default=0.0001, help='Minimum improvement threshold')
 
     args = parser.parse_args()
 
@@ -517,6 +578,9 @@ def main():  # CLI
         num_workers=args.num_workers,
         device=args.device,
         dry_run=args.dry_run,
+        use_mixed_precision=args.use_mixed_precision,
+        early_stopping_patience=args.early_stopping_patience,
+        early_stopping_min_delta=args.early_stopping_min_delta,
     )
 
     # print compact summary for logs
