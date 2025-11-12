@@ -54,14 +54,6 @@ The project uses curated protein datasets with experimentally determined structu
 
 ---
 
-## Dataset
-
-The project uses curated protein datasets with experimentally determined structures:
-- **Sequences**: 12,857 protein chains from the PDB (Protein Data Bank)
-- **Source**: PISCES culled PDB dataset (2018-06-06)
-- **Labels**: DSSP-assigned secondary structure for both Q8 and Q3 classifications
-- **Format**: CSV files with columns: `pdb_id`, `seq` (amino acid sequence), `sst8` (Q8 labels), `sst3` (Q3 labels)
-
 ## Quick Start
 
 ```bash
