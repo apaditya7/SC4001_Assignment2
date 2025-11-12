@@ -10,12 +10,14 @@ This project predicts local structural elements (helices, strands, loops) direct
 - **Q8**: 8-class prediction 
 - **Q3**: 3-class prediction
 
-**10 Model Architectures**
+**14 Model Architectures**
 1. **CNN**: Local pattern detection via 1D convolutions
 2. **Transformer**: Long-range dependencies via self-attention
 3. **CNN-Transformer**: Hybrid local + global modeling
 4. **BiLSTM**: Bidirectional sequential modeling
 5. **BiLSTM-CNN**: Combined sequential + local features
+6. **RNN-BiLSTM**: RNN and BiLSTM ensemble
+7. **RNN**: Vanilla RNN for sequential modeling
 
 **Embedding Strategies:**
 - **ESM2**: Pre-trained protein language model (640-dim per residue)
@@ -31,6 +33,8 @@ This project predicts local structural elements (helices, strands, loops) direct
 | 3 | **CNN-Transformer** | `3_cnn_transformer_esm2.ipynb` | `3_cnn_transformer_no_embeddings.ipynb` |
 | 4 | **BiLSTM** | `4_bilstm_esm2.ipynb` | `4_bilstm_no_embeddings.ipynb` |
 | 5 | **BiLSTM-CNN** | `5_bilstm_cnn_esm2.ipynb` | `5_bilstm_cnn_no_embeddings.ipynb` |
+| 6 | **RNN-BiLSTM** | `6_rnn_bilstm_esm2.ipynb` | `6_rnn_bilstm_no_embeddings.ipynb` |
+| 7 | **RNN** | `7_rnn_esm2.ipynb` | `7_rnn_no_embeddings.ipynb` |
 
 ## Dataset
 
