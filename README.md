@@ -42,15 +42,6 @@ This project predicts local structural elements (helices, strands, loops) direct
 - `data/2018-06-06-pdb-intersect-pisces.csv`: Protein sequence data
 - `data/2018-06-06-ss.cleaned.csv`: Secondary structure labels (8-class and 3-class)
 
----
-
-## Dataset
-
-The project uses curated protein datasets with experimentally determined structures:
-- **Sequences**: 12,857 protein chains from the PDB (Protein Data Bank)
-- **Source**: PISCES culled PDB dataset (2018-06-06)
-- **Labels**: DSSP-assigned secondary structure for both Q8 and Q3 classifications
-- **Format**: CSV files with columns: `pdb_id`, `seq` (amino acid sequence), `sst8` (Q8 labels), `sst3` (Q3 labels)
 
 ---
 
@@ -79,7 +70,3 @@ Each notebook produces:
 - SOV (Segment Overlap) for Q3
 
 ---
-
-## Quick Start
-
-1) Create and activate an environment, then install dependencies:
